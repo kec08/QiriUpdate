@@ -145,7 +145,7 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        // ✅ 새 요청 전에 누적 본문 초기화
+        // 새 요청 전에 누적 본문 초기화
         cleanAccum = ""
 
         streamingTask?.cancel()
@@ -173,7 +173,7 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
         guard let result = String(data: data, encoding: .utf8), !result.isEmpty else { return }
         print("[Watch] 원본 데이터: \(result)")
 
-        // ✅ SSE/평문 모두 처리
+        // SSE/평문 모두 처리
         let rawLines = result.components(separatedBy: .newlines)
 
         for rawLine in rawLines {
@@ -192,7 +192,7 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
                 continue
             }
             if line == "[streaming ended]" {
-                // ✅ 완료 알림 (누적 본문 전달)
+                // 완료 알림 (누적 본문 전달)
                 NotificationCenter.default.post(name: .sttResponseCompleted, object: cleanAccum)
                 continue
             }
@@ -229,14 +229,14 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
             }
         } else {
             print("[Watch] 스트리밍 완료, HTTP 상태: \(statusCode), 전체 응답(think 제거): \(cleanAccum)")
-            // ✅ 서버가 [streaming ended]를 안 줘도 완료 알림 보장
+            // 서버가 [streaming ended]를 안 줘도 완료 알림 보장
             NotificationCenter.default.post(name: .sttResponseCompleted, object: cleanAccum)
         }
 
         streamingTask = nil
         UserDefaults.standard.removeObject(forKey: "last_question")
         retryCount = 0
-        // ❗️cleanAccum 초기화 금지 (AnswerMoreView에서 프리로드 필요)
+        // cleanAccum 초기화 금지 (AnswerMoreView에서 프리로드 필요)
         // 초기화는 새 요청 시작 시(sendToBackend)에서만 수행
     }
 
