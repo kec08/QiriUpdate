@@ -2,8 +2,8 @@ import Foundation
 import WatchConnectivity
 import SwiftUI
 
-// MARK: - WatchSessionDelegate
-// iPhone ↔ Apple Watch 간의 WatchConnectivity 통신을 관리하는 싱글톤 클래스
+// MARK: - ㅎ
+// iPhone, Apple Watch 간의 WatchConnectivity 통신을 관리하는 싱글톤 클래스
 // WCSessionDelegate를 채택하여 세션 상태 변화 및 메시지 수신 이벤트를 처리
 final class WatchSessionDelegate: NSObject, WCSessionDelegate {
 

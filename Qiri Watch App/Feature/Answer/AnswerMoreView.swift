@@ -145,7 +145,7 @@ struct AnswerMoreView: View {
 
     // MARK: - 필터 + 안전장치(<think> 제거 포함)
     private func sanitize(_ text: String) -> String {
-        // 1) 디버그 로그/잡텍스트 필터
+        // 디버그 로그/잡텍스트 필터
         let bannedSubstrings = [
             "스트리밍 완료 응답 수신",
             "[Watch] 원본 데이터",
@@ -156,7 +156,7 @@ struct AnswerMoreView: View {
         for b in bannedSubstrings where text.contains(b) {
             return ""
         }
-        // 2) <think> 제거
+        // <think> 제거
         return removeThinkTags(from: text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

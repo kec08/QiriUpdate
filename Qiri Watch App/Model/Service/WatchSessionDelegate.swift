@@ -6,7 +6,8 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
     private var isSessionActivated = false
     private var streamingTask: URLSessionDataTask?
 
-    // AnswerMoreView 누적용(think 제거본) 버퍼
+    // AnswerMoreView가 onAppear 시 프리로드하는 버퍼
+    // 새 요청 전에만 초기화 — 완료 후에는 절대 건드리지 않음
     private var cleanAccum = ""
 
     private let maxRetries = 3
@@ -23,32 +24,27 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
 
     // MARK: - WCSession 설정
     private func activateSession() {
-        guard WCSession.isSupported() else {
-            print("WCSession 미지원")
-            return
-        }
+        guard WCSession.isSupported() else { return }
         let session = WCSession.default
         session.delegate = self
         session.activate()
-        print("Watch WCSession 활성화 시도")
     }
 
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
                  error: Error?) {
         isSessionActivated = (activationState == .activated)
-        print("Watch WCSession 활성 상태: \(activationState.rawValue), 오류: \(String(describing: error))")
 
         if isSessionActivated {
-            print("WCSession 활성화 완료")
             if let appleUserId = UserDefaults.standard.string(forKey: "user_id") {
+                // 로컬에 저장된 ID가 있으면 iPhone 동기화 불필요
                 print("[Watch] 로컬에 저장된 apple_user_id: \(appleUserId)")
             } else {
-                // iPhone 연동을 쓰지 않을 계획이면 이 블록은 제거해도 무방합니다.
+                // 저장된 ID 없음 → iPhone에 동기화 요청
+                // iOS WatchSessionDelegate.sendAppleUserIdToWatch()가 응답
                 session.sendMessage(["request_sync_apple_user_id": true], replyHandler: { reply in
                     if let appleUserId = reply["apple_user_id"] as? String, !appleUserId.isEmpty {
                         UserDefaults.standard.set(appleUserId, forKey: "user_id")
-                        print("[Watch] iOS로부터 apple_user_id 수신: \(appleUserId)")
                     }
                 }, errorHandler: { error in
                     print("[Watch] ID 동기화 요청 실패: \(error.localizedDescription)")
@@ -58,8 +54,9 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
     }
 
     // MARK: - 메시지 수신
+    // iPhone으로부터 메시지가 오면 NotificationCenter로 브로드캐스트
+    // RootView에서 .deviceNotRegistered 등 처리
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        print("받은 메시지: \(message)")
         DispatchQueue.main.async {
             NotificationCenter.default.post(
                 name: Notification.Name("WCSessionMessageReceived"),
@@ -72,7 +69,6 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
     func session(_ session: WCSession,
                  didReceiveMessage message: [String: Any],
                  replyHandler: @escaping ([String: Any]) -> Void) {
-        print("받은 메시지 (replyHandler 포함): \(message)")
         DispatchQueue.main.async {
             NotificationCenter.default.post(
                 name: Notification.Name("WCSessionMessageReceived"),
@@ -80,19 +76,20 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
                 userInfo: message
             )
         }
-        replyHandler(["status": "received"])
+        replyHandler(["status": "received"]) // replyHandler는 반드시 호출해야 iPhone 쪽 타임아웃 방지
     }
 
     // MARK: - STT 처리
     func processSpeechInput(_ text: String) {
+        // userId 없으면 백엔드 요청 자체를 막음
         guard let appleUserId = UserDefaults.standard.string(forKey: "user_id"),
               !appleUserId.isEmpty,
               appleUserId != "unknown_id" else {
-            print("[Watch] 사용자 ID 없음")
             NotificationCenter.default.post(name: .sttError, object: "사용자 ID를 확인할 수 없습니다.")
             return
         }
 
+        // 재시도 시 질문을 다시 꺼내 쓸 수 있도록 미리 저장
         UserDefaults.standard.set(text, forKey: "last_question")
         sendToBackend(question: text)
     }
@@ -100,15 +97,13 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
     // MARK: - 백엔드 요청
     private func sendToBackend(question: String) {
         guard let appleUserId = UserDefaults.standard.string(forKey: "user_id") else {
-            print("[Watch] 사용자 ID 없음")
             NotificationCenter.default.post(name: .sttError, object: "사용자 ID를 확인할 수 없습니다.")
             return
         }
 
-        // 한글 URL 인코딩
+        // 한글 등 특수문자가 포함된 질문을 URL에 안전하게 담기 위해 인코딩
         guard let encodedQuestion = question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let encodedUserId = appleUserId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            print("[Watch] 인코딩 오류")
             NotificationCenter.default.post(name: .sttError, object: "인코딩 오류")
             return
         }
@@ -124,83 +119,78 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
         ]
 
         guard let url = components.url else {
-            print("[Watch] URL 구성 실패")
             NotificationCenter.default.post(name: .sttError, object: "인코딩 오류")
             return
         }
-
-        print("[Watch] 요청 URL: \(url.absoluteString)")
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30.0
         configuration.timeoutIntervalForResource = 30.0
         configuration.allowsCellularAccess = true
-        configuration.waitsForConnectivity = false
+        configuration.waitsForConnectivity = false  // 연결될 때까지 기다리지 않고 바로 실패 처리
 
+        // delegate를 self로 지정해야 didReceive data 등 스트리밍 콜백을 받을 수 있음
         let session = URLSession(configuration: configuration,
                                  delegate: self,
                                  delegateQueue: OperationQueue.main)
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.cachePolicy = .reloadIgnoringLocalCacheData  // 이전 캐시 무시, 항상 새 응답 수신
 
-        // 새 요청 전에 누적 본문 초기화
+        // 새 요청 전 반드시 초기화 — 이전 응답이 섞이는 것 방지
         cleanAccum = ""
-
-        streamingTask?.cancel()
+        streamingTask?.cancel()  // 진행 중인 이전 요청 취소
         streamingTask = session.dataTask(with: request)
         streamingTask?.resume()
 
-        print("[Watch] 요청 시작")
+        // 요청 시작을 알림 → RootView가 .thinking 화면으로 전환
         NotificationCenter.default.post(name: .sttCompleted, object: nil)
     }
 
-    // MARK: - URLSession Delegate
+    // MARK: - URLSession Delegate (스트리밍 수신)
+
+    // 서버 응답 헤더 수신 시 호출 — .allow를 반환해야 body 수신이 시작됨
     func urlSession(_ session: URLSession,
                     dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        if let httpResponse = response as? HTTPURLResponse {
-            print("[Watch] 서버 응답 상태: \(httpResponse.statusCode)")
-        }
         completionHandler(.allow)
     }
 
+    // 서버에서 데이터 청크가 올 때마다 반복 호출됨 (스트리밍 핵심)
     func urlSession(_ session: URLSession,
                     dataTask: URLSessionDataTask,
                     didReceive data: Data) {
         guard let result = String(data: data, encoding: .utf8), !result.isEmpty else { return }
-        print("[Watch] 원본 데이터: \(result)")
 
-        // SSE/평문 모두 처리
         let rawLines = result.components(separatedBy: .newlines)
 
         for rawLine in rawLines {
             var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
 
-            // SSE 형태면 payload만 추출
+            // SSE 형식("data: 내용")이면 "data: " 접두어 제거 후 payload만 사용
             if line.hasPrefix("data: ") {
                 line = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
                 if line.isEmpty { continue }
             }
 
-            // 컨트롤 토큰 처리(서버가 줄 수도 있으니 유지)
+            // 서버 컨트롤 토큰 처리
             if line == "[streaming started]" {
                 NotificationCenter.default.post(name: .sttResponseStarted, object: nil)
                 continue
             }
             if line == "[streaming ended]" {
-                // 완료 알림 (누적 본문 전달)
                 NotificationCenter.default.post(name: .sttResponseCompleted, object: cleanAccum)
                 continue
             }
 
-            // 1) ThinkingView용: 원본 청크 그대로 브로드캐스트 → <think> 파싱/실시간 표시
+            // 두 갈래로 나눠서 각각 다른 View에 전달
+            // ThinkingView: <think> 포함 원본 → 추론 과정을 실시간으로 보여줌
             NotificationCenter.default.post(name: .sttResponseUpdated, object: line)
 
-            // 2) AnswerMoreView용: think 제거본만 누적/브로드캐스트
+            // AnswerMoreView: <think> 제거한 정제본만 누적
             let cleaned = stripThink(from: line).trimmingCharacters(in: .whitespacesAndNewlines)
             if !cleaned.isEmpty {
                 cleanAccum += (cleanAccum.isEmpty ? cleaned : "\n" + cleaned)
@@ -209,18 +199,18 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
         }
     }
 
+    // 스트리밍 완료 또는 오류 시 호출
     func urlSession(_ session: URLSession,
                     task: URLSessionTask,
                     didCompleteWithError error: Error?) {
         let statusCode = (task.response as? HTTPURLResponse)?.statusCode ?? -1
 
         if let error = error {
-            print("[Watch] 스트리밍 완료, 오류: \(error.localizedDescription), HTTP 상태: \(statusCode)")
             NotificationCenter.default.post(name: .sttError, object: "에러 발생: \(error.localizedDescription)")
 
+            // 네트워크 오류 시 최대 3회, 2초 간격으로 자동 재시도
             if retryCount < maxRetries && statusCode != -1 {
                 retryCount += 1
-                print("[Watch] 리트라이 \(retryCount)/\(maxRetries)")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     if let question = UserDefaults.standard.string(forKey: "last_question") {
                         self.sendToBackend(question: question)
@@ -228,20 +218,21 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
                 }
             }
         } else {
-            print("[Watch] 스트리밍 완료, HTTP 상태: \(statusCode), 전체 응답(think 제거): \(cleanAccum)")
-            // 서버가 [streaming ended]를 안 줘도 완료 알림 보장
+            // [streaming ended]가 오지 않은 경우를 대비한 완료 알림 보장
             NotificationCenter.default.post(name: .sttResponseCompleted, object: cleanAccum)
         }
 
         streamingTask = nil
         UserDefaults.standard.removeObject(forKey: "last_question")
         retryCount = 0
-        // cleanAccum 초기화 금지 (AnswerMoreView에서 프리로드 필요)
-        // 초기화는 새 요청 시작 시(sendToBackend)에서만 수행
+        // cleanAccum은 여기서 초기화 금지
+        // AnswerMoreView가 onAppear에서 currentCleanAccum()으로 프리로드하기 때문
     }
 
     // MARK: - Utils
-    /// <think> 블록 전체 제거
+
+    // <think>...</think> 블록 전체 제거
+    // 한 청크 안에 태그가 여러 개 있을 수 있어서 while로 반복 처리
     private func stripThink(from text: String) -> String {
         var out = text
         while let s = out.range(of: "<think>"),
@@ -254,9 +245,8 @@ class WatchSessionDelegate: NSObject, WCSessionDelegate, URLSessionDataDelegate 
         return out
     }
 
-    /// AnswerMoreView 진입 시, 지금까지 누적된 think-제거 본문을 돌려줌
+    // AnswerMoreView가 onAppear 시 호출 — 스트리밍 중이어도 지금까지 누적된 내용 즉시 표시 가능
     func currentCleanAccum() -> String {
         return cleanAccum
     }
 }
-

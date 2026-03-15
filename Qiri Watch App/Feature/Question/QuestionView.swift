@@ -80,7 +80,8 @@ struct QuestionView: View {
             }
         }
     }
-
+    
+    // spokenText iPhone에 전송 로직
     private func processSpeechInput() {
         WatchSessionDelegate.shared.processSpeechInput(spokenText)
         NotificationCenter.default.addObserver(forName: .sttCompleted, object: nil, queue: .main) { _ in

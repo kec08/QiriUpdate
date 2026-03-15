@@ -7,7 +7,8 @@ struct RootView: View {
     @State private var isOnboardingComplete: Bool = UserDefaults.standard.bool(forKey: "isOnboardingComplete")
     @State private var isMainComplete: Bool = false
     @State private var sttResponse: String = ""
-
+    // currentState 하나로 모든 화면을 통제하고, 사용자 액션은 콜백으로, 비동기 결과는 NotificationCenter로 받아서 상태를 바꾸는 구조
+    //STT나 AI 응답처럼 View 바깥에서 실행되는 작업이 끝나면 알림을 날리고, onReceive가 받아서 화면을 전환
     enum ScreenState {
         case splash
         case onboarding
@@ -77,7 +78,8 @@ struct RootView: View {
                     }
                     .background(.customBackgroundBlack)
                     .foregroundColor(.customWhite)
-
+                
+            //thinking 상태에서 AI 응답을 받아 sttResponse에 저장해두고, answer 화면에 넘겨주는 방식
             case .thinking:
                 ThinkingView()
                     .transition(.opacity)
