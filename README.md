@@ -1,5 +1,9 @@
 # Qiri - Apple Watch 음성 AI 어시스턴트
 
+<p align="center">
+  <img width="1920" height="1080" alt="Image" src="https://github.com/user-attachments/assets/23534cbc-b8b3-4cd0-a066-2cec3c753094" alt="Qiri" width="120"/>
+</p>
+
 > Apple Watch에서 손 제스처와 음성으로 AI에게 질문하고, 실시간 스트리밍 답변을 받아보세요.
 
 Qiri는 **iOS + watchOS** 듀얼 플랫폼 AI 어시스턴트 앱입니다. Apple Watch의 AssistiveTouch(손 제스처) 기능을 활용하여 손목 위에서 음성으로 질문하면, AI가 실시간으로 답변을 스트리밍해 줍니다.
