@@ -119,7 +119,7 @@ Qiri-main/
 1. **저장소 클론**
    ```bash
    git clone https://github.com/kec08/QiriUpdate
-   cd Qiri
+   cd QiriUpdate
    ```
 
 2. **Xcode에서 프로젝트 열기**
@@ -137,15 +137,6 @@ Qiri-main/
 5. **실행**
    - 시뮬레이터 또는 실기기에서 빌드 & 실행 (⌘+R)
    - Watch 앱은 페어링된 Apple Watch 또는 Watch 시뮬레이터에서 실행
-
-### 백엔드 서버
-- 앱은 `http://qiri.kro.kr:10000/` 백엔드 서버와 통신합니다.
-- 주요 API 엔드포인트:
-  - `POST /auth/apple` — Apple ID 인증
-  - `POST /register-device` — 디바이스 등록
-  - `GET /ask?q={질문}&apple_user_id={유저ID}` — AI 질문 (SSE 스트리밍 응답)
-
----
 
 ## 사용 방법
 
